@@ -1,0 +1,15 @@
+node_modules/
+.env
+.env.*
+npm-debug.log*
+
+# Project-generated files
+Saves/Photos/
+Saves/Photosd/
+log.json
+anime_cache.json
+api_response.json
+
+# OS/editor
+.DS_Store
+Thumbs.db
