@@ -1,228 +1,29 @@
-// Состояние
-let state = {
-    page: 1,
-    loading: false,
-    allLoaded: false,
-    items: [],
-    searchMode: false,
-    searchResults: [],
-    sort: 'default'
-};
-
-// DOM элементы
-const grid = document.getElementById('grid');
-const loadMoreBtn = document.getElementById('loadMore');
-const searchInput = document.getElementById('searchInput');
-const searchBtn = document.getElementById('searchBtn');
-const resetBtn = document.getElementById('resetBtn');
-const sortSelect = document.getElementById('sortSelect');
-const countSpan = document.getElementById('count');
-
-// ==================== ОСНОВНЫЕ ФУНКЦИИ ====================
-
-// Загрузка аниме
-async function loadAnime(page = 1, append = false) {
-    if (state.loading || state.allLoaded) return;
-    state.loading = true;
-    
-    loadMoreBtn.disabled = true;
-    loadMoreBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Загрузка...';
-    
-    try {
-        const response = await fetch(`/api/anime?page=${page}`);
-        const data = await response.json();
-        
-        if (data.success) {
-            if (append) {
-                state.items = [...state.items, ...data.data];
-            } else {
-                state.items = data.data;
-            }
-            
-            renderItems(state.items);
-            updateStats();
-            
-            if (data.hasMore) {
-                loadMoreBtn.style.display = 'block';
-                loadMoreBtn.disabled = false;
-                loadMoreBtn.innerHTML = '<i class="fas fa-plus-circle"></i> Показать ещё';
-                state.allLoaded = false;
-            } else {
-                loadMoreBtn.style.display = 'none';
-                state.allLoaded = true;
-            }
-        }
-    } catch (error) {
-        console.error('❌ Ошибка:', error);
-        grid.innerHTML = `
-            <div class="empty">
-                <i class="fas fa-exclamation-triangle"></i>
-                <p>Ошибка загрузки: ${error.message}</p>
-                <button onclick="loadAnime(1, false)" style="margin-top:16px;padding:8px 24px;background:#ff6b9d;border:none;border-radius:20px;color:#0a0b14;font-weight:600;cursor:pointer;">
-                    Попробовать снова
-                </button>
-            </div>
-        `;
-    }
-    
-    state.loading = false;
-}
-
-// Рендер карточек
-function renderItems(items) {
-    if (!items || items.length === 0) {
-        grid.innerHTML = `
-            <div class="empty">
-                <i class="fas fa-search"></i>
-                <p>Ничего не найдено</p>
-            </div>
-        `;
-        return;
-    }
-    
-    // Применяем сортировку
-    const sorted = sortItems(items);
-    
-    grid.innerHTML = '';
-    sorted.forEach(item => {
-        const card = document.createElement('div');
-        card.className = 'card';
-        
-        const imageHtml = item.image 
-            ? `<img src="${item.image}" alt="${item.title}" loading="lazy" onerror="this.parentElement.innerHTML = '<div class=\\'placeholder\\'><i class=\\'fas fa-image\\'></i><span>${item.title.substring(0, 15)}</span></div>'">`
-            : `<div class="placeholder"><i class="fas fa-image"></i><span>${item.title.substring(0, 15)}</span></div>`;
-        
-        card.innerHTML = `
-            <div class="card-image">${imageHtml}</div>
-            <div class="card-info">
-                <h3 title="${item.title}">${item.title}</h3>
-                <div class="meta">
-                    <span><i class="fas fa-star" style="color:#fbbf24;"></i> ${item.score}</span>
-                    <span><i class="fas fa-film"></i> ${item.episodes}</span>
-                    <span><i class="fas fa-calendar"></i> ${item.year}</span>
-                </div>
-                ${item.genres ? `<div class="genres">${item.genres}</div>` : ''}
-            </div>
-        `;
-        
-        card.addEventListener('click', () => {
-            window.open(`https://yandex.ru/search/?text=${encodeURIComponent(item.title)}+смотреть+онлайн`, '_blank');
-        });
-        
-        grid.appendChild(card);
-    });
-}
-
-// Сортировка
-function sortItems(items) {
-    const sorted = [...items];
-    
-    switch (state.sort) {
-        case 'score':
-            sorted.sort((a, b) => parseFloat(b.score) - parseFloat(a.score));
-            break;
-        case 'year':
-            sorted.sort((a, b) => (b.year || 0) - (a.year || 0));
-            break;
-        case 'episodes':
-            sorted.sort((a, b) => (b.episodes || 0) - (a.episodes || 0));
-            break;
-        case 'title':
-            sorted.sort((a, b) => a.title.localeCompare(b.title));
-            break;
-        default:
-            // По умолчанию - как пришло
-            break;
-    }
-    
-    return sorted;
-}
-
-// Обновление статистики
-function updateStats() {
-    const count = state.searchMode ? state.searchResults.length : state.items.length;
-    countSpan.textContent = count;
-}
-
-// ==================== ПОИСК ====================
-
-async function search() {
-    const query = searchInput.value.trim();
-    
-    if (!query) {
-        state.searchMode = false;
-        loadMoreBtn.style.display = 'block';
-        renderItems(state.items);
-        updateStats();
-        return;
-    }
-    
-    state.searchMode = true;
-    loadMoreBtn.style.display = 'none';
-    grid.innerHTML = '<div class="loading"><i class="fas fa-spinner fa-spin"></i><p>Поиск...</p></div>';
-    
-    try {
-        const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
-        const data = await response.json();
-        
-        if (data.success) {
-            state.searchResults = data.data;
-            renderItems(state.searchResults);
-            updateStats();
-        }
-    } catch (error) {
-        console.error('❌ Ошибка поиска:', error);
-        grid.innerHTML = `
-            <div class="empty">
-                <i class="fas fa-exclamation-triangle"></i>
-                <p>Ошибка поиска: ${error.message}</p>
-            </div>
-        `;
-    }
-}
-
-// ==================== СБРОС ====================
-
-function resetAll() {
-    state.searchMode = false;
-    state.searchResults = [];
-    state.page = 1;
-    state.allLoaded = false;
-    searchInput.value = '';
-    grid.innerHTML = '<div class="loading"><i class="fas fa-spinner fa-spin"></i><p>Загрузка...</p></div>';
-    loadAnime(1, false);
-}
-
-// ==================== СОБЫТИЯ ====================
-
-// Загрузка при открытии
-document.addEventListener('DOMContentLoaded', () => {
-    loadAnime(1, false);
-});
-
-// Поиск
-searchBtn.addEventListener('click', search);
-searchInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') search();
-});
-
-// Сброс
-resetBtn.addEventListener('click', resetAll);
-
-// Сортировка
-sortSelect.addEventListener('change', (e) => {
-    state.sort = e.target.value;
-    if (state.searchMode) {
-        renderItems(state.searchResults);
-    } else {
-        renderItems(state.items);
-    }
-});
-
-// Кнопка "Показать ещё"
-loadMoreBtn.addEventListener('click', () => {
-    if (!state.searchMode) {
-        state.page++;
-        loadAnime(state.page, true);
-    }
-});
+const state={page:1,items:[],query:'',loading:false,hasMore:true,currentManga:null,chapters:[],chapterIndex:-1,readerPages:[]};
+const $=id=>document.getElementById(id);
+const grid=$('grid'),searchInput=$('searchInput'),count=$('count'),loadMoreBtn=$('loadMoreBtn'),toast=$('toast');
+$('year').textContent=new Date().getFullYear();
+function notify(message,type='success'){toast.textContent=message;toast.className='toast show '+type;clearTimeout(notify.timer);notify.timer=setTimeout(()=>toast.classList.remove('show'),2800)}
+function showLoading(message='Загружаем каталог...'){grid.innerHTML='<div class="loading-state"><span class="loader"></span><p>'+message+'</p></div>'}
+function showEmpty(message,icon='fa-book-open'){grid.innerHTML='<div class="empty-state"><i class="fa-solid '+icon+'"></i><p>'+message+'</p></div>'}
+async function request(url){const response=await fetch(url);let data;try{data=await response.json()}catch{throw new Error('Сервер вернул некорректный ответ')}if(!response.ok||data.success===false)throw new Error(data.error||'Ошибка запроса');return data}
+function titleOf(item){return item.title||'Без названия'}
+function createCard(item,index){const card=document.createElement('article');card.className='manga-card';card.style.animationDelay=Math.min(index*25,250)+'ms';const cover=document.createElement('div');cover.className='manga-cover';if(item.cover){const img=document.createElement('img');img.src=item.cover;img.alt=titleOf(item);img.loading='lazy';img.onerror=()=>{img.remove();cover.insertAdjacentHTML('afterbegin','<div class="empty-state"><i class="fa-regular fa-image"></i></div>')};cover.append(img)}else{cover.innerHTML='<div class="empty-state"><i class="fa-regular fa-image"></i></div>'}const shade=document.createElement('div');shade.className='cover-shade';const open=document.createElement('span');open.className='cover-open';open.textContent='Открыть историю';const score=document.createElement('span');score.className='cover-score';score.innerHTML='<i class="fa-solid fa-star"></i> '+(item.rating?Number(item.rating).toFixed(1):'—');cover.append(shade,open,score);const info=document.createElement('div');info.className='manga-info';const h=document.createElement('h3');h.textContent=titleOf(item);h.title=titleOf(item);const p=document.createElement('p');p.textContent=[item.year||'Год неизвестен',item.genres].filter(Boolean).join(' · ');info.append(h,p);card.append(cover,info);card.addEventListener('click',()=>openDetails(item));return card}
+function render(items,append=false){if(!append)grid.innerHTML='';if(!items.length&&!append){showEmpty(state.query?'По этому запросу ничего не найдено':'Пока нет доступных историй','fa-magnifying-glass');return}items.forEach((item,i)=>grid.append(createCard(item,i+(append?grid.children.length:0))));count.textContent=state.query?items.length:(state.items.length||'—')}
+async function loadCatalog(page=1,append=false){if(state.loading)return;state.loading=true;loadMoreBtn.disabled=true;loadMoreBtn.innerHTML='<span class="loader"></span> Загружаем';if(!append)showLoading();try{const endpoint=state.query?'/api/search?q='+encodeURIComponent(state.query):'/api/manga-list?page='+page+'&limit=20';const result=await request(endpoint);const items=Array.isArray(result.data)?result.data:[];if(append)state.items.push(...items);else state.items=items;state.page=page;state.hasMore=!state.query&&Boolean(result.hasMore);render(items,append);$('sectionTitle').textContent=state.query?'Результаты поиска':'Популярная манга';$('sectionSubtitle').textContent=state.query?'Поиск по каталогу MangaDex':'Истории, которые сейчас читают чаще всего';$('loadMoreWrapper').style.display=state.hasMore?'block':'none';if(!items.length&&!append)count.textContent='0'}catch(error){if(!append)showEmpty(error.message,'fa-triangle-exclamation');notify(error.message,'error');$('loadMoreWrapper').style.display='none'}finally{state.loading=false;loadMoreBtn.disabled=!state.hasMore;loadMoreBtn.innerHTML='Показать ещё <i class="fa-solid fa-arrow-down"></i>'}}
+function doSearch(){state.query=searchInput.value.trim();state.page=1;state.hasMore=true;loadCatalog(1,false)}
+async function openDetails(manga){state.currentManga=manga;$('detailModal').classList.add('open');$('detailModal').setAttribute('aria-hidden','false');document.body.style.overflow='hidden';const root=$('detailContent');root.innerHTML='<div class="loading-state"><span class="loader"></span><p>Загружаем главы...</p></div>';const cover=document.createElement('img');cover.className='detail-cover';cover.alt=titleOf(manga);if(manga.cover)cover.src=manga.cover;const copy=document.createElement('div');copy.className='detail-copy';const eyebrow=document.createElement('div');eyebrow.className='eyebrow';eyebrow.textContent='ИСТОРИЯ ИЗ КАТАЛОГА';const h=document.createElement('h2');h.id='detailTitle';h.textContent=titleOf(manga);const desc=document.createElement('p');desc.className='detail-description';desc.textContent=manga.description||'Описание для этой истории пока не добавлено.';const meta=document.createElement('div');meta.className='detail-meta';[manga.year?'Год: '+manga.year:null,manga.status?'Статус: '+manga.status:null,manga.rating?'★ '+Number(manga.rating).toFixed(1):null].filter(Boolean).forEach(t=>{const chip=document.createElement('span');chip.className='meta-chip';chip.textContent=t;meta.append(chip)});const chapterHead=document.createElement('div');chapterHead.className='chapter-heading';chapterHead.innerHTML='<span>ДОСТУПНЫЕ ГЛАВЫ</span><span id="chapterCount">...</span>';const list=document.createElement('div');list.className='chapter-list';list.id='chapterList';copy.append(eyebrow,h,desc,meta,chapterHead,list);root.replaceChildren(cover,copy);try{const data=await request('/api/chapters?id='+encodeURIComponent(manga.id));state.chapters=data.data||[];$('chapterCount').textContent=state.chapters.length+' глав';if(!state.chapters.length){list.innerHTML='<div class="empty-state">Русские главы не найдены</div>';return}state.chapters.forEach((chapter,index)=>{const button=document.createElement('button');button.className='chapter-item';const label=document.createElement('span');label.textContent='Глава '+chapter.chapter+(chapter.title&&chapter.title!=='Глава '+chapter.chapter?' · '+chapter.title:'');const pages=document.createElement('small');pages.textContent=(chapter.pages||0)+' стр.';button.append(label,pages);button.addEventListener('click',()=>openReader(index));list.append(button)})}catch(error){list.innerHTML='<div class="empty-state">'+error.message+'</div>'}}
+function closeModal(id){$(id).classList.remove('open');$(id).setAttribute('aria-hidden','true');if(id==='detailModal')document.body.style.overflow=''}
+async function openReader(index){state.chapterIndex=index;const chapter=state.chapters[index];if(!chapter)return;$('readerModal').classList.add('open');$('readerModal').setAttribute('aria-hidden','false');$('readerTitle').textContent='Глава '+chapter.chapter;$('readerPages').innerHTML='<div class="loading-state"><span class="loader"></span><p>Загружаем страницы...</p></div>';$('readerPrev').disabled=index<=0;$('readerNext').disabled=index>=state.chapters.length-1;try{const data=await request('/api/pages?id='+encodeURIComponent(chapter.id));state.readerPages=data.data||[];const pages=$('readerPages');pages.innerHTML='';if(!state.readerPages.length){showReaderError('Страницы главы недоступны');return}state.readerPages.forEach((url,i)=>{const img=document.createElement('img');img.src=url;img.alt='Страница '+(i+1);img.loading=i<2?'eager':'lazy';img.onerror=()=>{const error=document.createElement('div');error.className='page-error';error.textContent='Не удалось загрузить страницу '+(i+1);img.replaceWith(error)};pages.append(img)})}catch(error){showReaderError(error.message)}}
+function showReaderError(message){$('readerPages').innerHTML='';const p=document.createElement('p');p.className='page-error';p.textContent=message;$('readerPages').append(p)}
+$('searchForm').addEventListener('submit',e=>{e.preventDefault();doSearch();$('catalog').scrollIntoView({behavior:'smooth'})});
+$('mobileSearch').addEventListener('click',()=>{const form=$('searchForm');form.classList.toggle('mobile-open');if(form.classList.contains('mobile-open'))searchInput.focus()});
+$('refreshBtn').addEventListener('click',()=>{state.query='';searchInput.value='';state.page=1;loadCatalog()});
+$('loadMoreBtn').addEventListener('click',()=>{if(state.hasMore)loadCatalog(state.page+1,true)});
+document.querySelectorAll('[data-filter]').forEach(button=>button.addEventListener('click',()=>{document.querySelectorAll('[data-filter]').forEach(x=>x.classList.toggle('active',x===button));state.query='';searchInput.value='';state.page=1;loadCatalog()}));
+document.querySelectorAll('[data-close]').forEach(button=>button.addEventListener('click',()=>closeModal(button.dataset.close)));
+$('detailModal').addEventListener('click',e=>{if(e.target===$('detailModal'))closeModal('detailModal')});
+$('readerBack').addEventListener('click',()=>{$('readerModal').classList.remove('open');$('readerModal').setAttribute('aria-hidden','true')});
+$('readerPrev').addEventListener('click',()=>openReader(state.chapterIndex-1));
+$('readerNext').addEventListener('click',()=>openReader(state.chapterIndex+1));
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){if($('readerModal').classList.contains('open'))$('readerBack').click();else closeModal('detailModal')}});
+loadCatalog();
